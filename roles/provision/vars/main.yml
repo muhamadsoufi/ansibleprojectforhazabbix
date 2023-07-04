@@ -1,0 +1,12 @@
+##galera conf
+ip1: 192.168.1.1
+ip2: 192.168.1.2
+current_node_ip: #"your_current_ip"
+node_name: #"your node name should be uniqe also"
+
+##keepalived conf
+master_or_slave: #MASTER OR BACKUP , DEFINE WITH CAPITAL
+define_your_interface: #define witch interface you want to listen on
+virtual_router_id: #define the same virtual router id
+priority: #define priority , higher priority become master node
+virtual_ipaddress: #define your vip based on network , it should be the same for both

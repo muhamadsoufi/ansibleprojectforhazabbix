@@ -1,0 +1,139 @@
+- name: **** Find RPM ,Files Contains Pre Requisities-Zabbix(Files,agent)-Mariadb(Galera)-Keepalived ****
+  find:
+    paths: "{{ playbook_dir }}/roles/provision/files"
+    patterns: '*.rpm'
+    recurse: yes
+  register: rpm_files
+
+- name: **** Install RPM files ****
+  yum:
+    name: "{{ item.path }}"
+    state: present
+    disable_gpg_check: yes
+    allow_downgrade: yes
+  loop: "{{ rpm_files.files }}"
+
+
+- name: **** configure Galera / copy conf section  / define vars in var file  ****
+  template:
+    src: galera.conf.j2
+    dest: /etc/my.conf.d/
+    owner: root
+    group: root
+  notify: enabeling galera 
+
+
+- name: **** Configure Keepalive / copy conf file / define vars in var file ****
+  template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/
+    owner: root
+    group: root
+  notify: restart keepalived
+  
+  
+#remember that , you should initialize the first node using galer_new_cluster 
+#for the second node you need to use systemctl restart mysqld , it's up to you
+#by using the following part you can initialize the galera cluster,if it was running
+#then it use mysql restart service , if not it use the galer_new_cluster command
+  
+- name: **** Check if Galera Cluster is initialized ****
+  stat:
+    path: /var/lib/mysql/grastate.dat
+  register: galera_initialized
+
+- name: *** Run galera_new_cluster command ***
+  command: galera_new_cluster
+  args:
+    creates: /var/lib/mysql/grastate.dat
+  register: cluster_initialized
+  changed_when: cluster_initialized.rc != 1
+  when: not galera_initialized.stat.exists
+
+- name: ** Restart MySQL service **
+  systemd:
+    name: mysql
+    state: restarted
+  when: galera_initialized.stat.exists and cluster_initialized.changed
+
+
+# Configure firewall
+
+- name: **** Add ports to firewall ****
+  firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+  loop:
+    - "3306/tcp"
+    - "4567/tcp"
+    - "4568/tcp"
+    - "4444/tcp"
+    - "4567/udp"
+
+- name: **** Add services to firewall ****
+  firewalld:
+    service: "{{ item }}"
+    permanent: yes
+    state: enabled
+  loop:
+    - "http"
+    - "https"
+
+- name: **** Add ports to firewall ****
+  firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+  loop:
+    - "10051/tcp"
+    - "10050/tcp"
+
+- name: **** Reload firewall rules ****
+  command: firewall-cmd --reload
+
+#setup db
+
+- name: **** Create Zabbix database
+  command: mysql -uroot -p{{ mysql_root_password }} -e "create database zabbixdb character set utf8mb4 collate utf8mb4_bin;"
+
+- name: **** Create Zabbix user
+  command: mysql -uroot -p{{ mysql_root_password }} -e "create user zabbix@localhost identified by 'password';"
+
+- name: **** Grant privileges to Zabbix user
+  command: mysql -uroot -p{{ mysql_root_password }} -e "grant all privileges on zabbixdb.* to zabbix@localhost;"
+
+- name: **** Enable log_bin_trust_function_creators
+  command: mysql -uroot -p{{ mysql_root_password }} -e "set global log_bin_trust_function_creators = 1;"
+
+- name: **** Restore Zabbix database schema
+  command: zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql --default-character-set=utf8mb4 -uzabbix -p{{ zabbix_user_password }} zabbixdb
+
+- name: **** Disable log_bin_trust_function_creators
+  command: mysql -uroot -p{{ mysql_root_password }} -e "set global log_bin_trust_function_creators = 0;"
+
+#setup zabbix
+
+- name: **** Update zabbixuser in zabbix_server.conf
+  lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: '^DBUser='
+    line: 'DBUser=zabbix'
+
+- name: **** Update zabbixdb in zabbix_server.conf
+  lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: '^DBName='
+    line: 'DBName=zabbixdb'
+
+- name: **** Update zabbixdbpassword in zabbix_server.conf
+  lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: '^DBPassword='
+    line: 'DBPassword=zabbixdbpassword'
+  notify: restart zabbix
+
+
+
+
+  

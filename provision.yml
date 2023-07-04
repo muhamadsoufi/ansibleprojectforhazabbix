@@ -1,0 +1,6 @@
+---
+- hosts: [myhost]
+  become: true
+  gather_fact: ture
+  roles:
+    - provision

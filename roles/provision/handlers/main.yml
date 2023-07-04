@@ -1,0 +1,16 @@
+- name:  enabeling galera 
+  service:
+    name: sshd
+    enabled: yes
+
+- name: restart keepalived
+  service:
+    name: keepalived
+    state: restarted
+    enabled: yes
+    
+- name: restart zabbix
+  service:
+    name: zabbix-server
+    state: restarted
+    enabled: yes
